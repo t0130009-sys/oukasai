@@ -1,0 +1,629 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>文化祭予約者一覧作成ツール</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: 一枚の作業画面。上に3つの受け皿(文化中/文化高/予約者一覧)、下に結果と保存。 */
+:root{
+  --bg:#f3f5f4; --surface:#ffffff; --fg:#1c2927; --muted:#5d6d6a; --line:#d5dcda;
+  --accent:#a8325a; --accent-fg:#ffffff; --accent-soft:#f6e3ea;
+  --ok:#1f7a54; --ok-soft:#dcefe6; --warn:#9a5b00; --warn-soft:#faecd0; --bad:#b3261e; --bad-soft:#f7dcd9; --info:#2c5f8a; --info-soft:#dce9f4;
+  --f-disp:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",Meiryo,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141b1a; --surface:#1c2624; --fg:#e6eeec; --muted:#9db0ac; --line:#32413e;
+  --accent:#e27a9c; --accent-fg:#2a0f19; --accent-soft:#3a2430;
+  --ok:#74d1a3; --ok-soft:#1d3a2f; --warn:#e8b25c; --warn-soft:#3b2f17; --bad:#f19a92; --bad-soft:#40201d; --info:#8bbbe6; --info-soft:#1d3042; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141b1a; --surface:#1c2624; --fg:#e6eeec; --muted:#9db0ac; --line:#32413e;
+  --accent:#e27a9c; --accent-fg:#2a0f19; --accent-soft:#3a2430;
+  --ok:#74d1a3; --ok-soft:#1d3a2f; --warn:#e8b25c; --warn-soft:#3b2f17; --bad:#f19a92; --bad-soft:#40201d; --info:#8bbbe6; --info-soft:#1d3042; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.7;
+  padding-inline:max(16px,env(safe-area-inset-left,0px)) max(16px,env(safe-area-inset-right,0px));padding-block:28px 56px}
+.wrap{max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:22px;min-width:0}
+header{display:flex;flex-direction:column;gap:4px}
+.eyebrow{font-size:12px;letter-spacing:.18em;color:var(--accent);font-weight:700}
+h1{font-family:var(--f-disp);font-weight:800;font-size:clamp(24px,4.6vw,32px);line-height:1.3;margin:0;text-wrap:balance}
+header p{margin:4px 0 0;color:var(--muted);max-width:62ch}
+h2{font-size:14px;letter-spacing:.08em;margin:0 0 10px;color:var(--muted);font-weight:700}
+.slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.slot{background:var(--surface);border:1.5px dashed var(--line);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.slot.on{border-style:solid;border-color:var(--ok)}
+.slot .role{font-weight:700;font-size:14px}
+.slot .hint{font-size:12.5px;color:var(--muted)}
+.slot .got{font-size:13px;color:var(--ok);font-weight:700;overflow-wrap:anywhere}
+.slot .fname{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.drop{border:2px dashed var(--accent);border-radius:8px;background:var(--accent-soft);padding:22px 16px;text-align:center;cursor:pointer;transition:background .15s}
+.drop.over{background:var(--surface);border-style:solid}
+.drop strong{display:block;font-size:16px}
+.drop span{color:var(--muted);font-size:13px}
+.drop:focus-visible,button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--info);outline-offset:2px}
+.opts{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;font-size:14px}
+select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:6px 10px}
+.msgs{display:flex;flex-direction:column;gap:8px}
+.msg{border-radius:5px;padding:9px 12px;font-size:13.5px;background:var(--warn-soft);color:var(--fg);border-left:4px solid var(--warn)}
+.msg.err{background:var(--bad-soft);border-left-color:var(--bad)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:18px;min-width:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.tile{border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.tile b{display:block;font-size:26px;line-height:1.2;font-variant-numeric:tabular-nums;font-family:var(--f-disp)}
+.tile span{font-size:12.5px;color:var(--muted)}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{font-size:12.5px;color:var(--muted);font-weight:700}
+td.n,th.n{text-align:right}
+.chip{display:inline-block;font-size:12px;font-weight:700;padding:1px 9px;border-radius:99px;background:var(--info-soft);color:var(--info)}
+.chip.add{background:var(--ok-soft);color:var(--ok)}
+.chip.cancel{background:var(--bad-soft);color:var(--bad)}
+.chip.movein,.chip.moveout,.chip.time,.chip.consult{background:var(--warn-soft);color:var(--warn)}
+.chip.readd{background:var(--info-soft);color:var(--info)}
+details{border:1px solid var(--line);border-radius:6px}
+summary{cursor:pointer;padding:10px 14px;font-weight:700;font-size:14px}
+details .scroll{padding:0 14px 12px;max-height:420px;overflow:auto}
+.actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+button.primary{font:inherit;font-weight:700;background:var(--accent);color:var(--accent-fg);border:0;border-radius:6px;padding:11px 20px;cursor:pointer}
+button.primary:disabled{opacity:.5;cursor:default}
+.note{font-size:13px;color:var(--muted)}
+.ok-text{color:var(--ok);font-weight:700;font-size:13.5px}
+.empty{color:var(--muted);font-size:14px;border:1px dashed var(--line);border-radius:6px;padding:16px}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">桜華祭(文化祭)</div>
+    <h1>文化祭予約者一覧作成ツール</h1>
+    <p>読み込んだExcelはこの画面の中だけで処理され、外部には送信されません。中学・高校の申込者一覧と、いまの文化祭.xlsxをまとめて入れると、日程ごとの予約者一覧を更新します。名前がない人はキャンセル欄へ移し、予約時間が変わっていれば直します。</p>
+  </header>
+
+  <div class="drop" id="drop" tabindex="0" role="button" aria-label="Excelファイルを選ぶ">
+    <strong>Excelを3つまとめてここへドラッグ</strong>
+    <span>またはクリックして選択。中身で自動判別するので、順番やファイル名は気にしなくて大丈夫です。</span>
+    <input type="file" id="pick" accept=".xlsx" multiple hidden>
+  </div>
+
+  <section aria-label="読み込んだファイル">
+    <h2>読み込み状況</h2>
+    <div class="slots" id="slots"></div>
+  </section>
+
+  <fieldset class="opts" style="border:0;padding:0;margin:0">
+    <legend style="padding:0;margin-bottom:6px;font-weight:700;font-size:14px">予約者一覧の並び順(作るものにチェック)</legend>
+    <label><input type="checkbox" id="o-keep" checked> 今の並びを保つ(新しい人は末尾)</label>
+    <label><input type="checkbox" id="o-kana"> 午前→午後、フリガナ順</label>
+    <span class="note">両方チェックすると、1日目・2日目は今の並びのまま、フリガナ順は別シート(1日目_フリガナ順など)で追加します。</span>
+  </fieldset>
+
+  <div class="msgs" id="msgs" aria-live="polite"></div>
+  <div id="result"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(()=>{
+const NS='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+const RNS='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const $=id=>document.getElementById(id);
+const norm=s=>String(s==null?'':s).normalize('NFKC');
+const nameKey=s=>norm(s).replace(/\s+/g,'');
+const pad2=n=>String(n).padStart(2,'0');
+const colNum=s=>{let n=0;for(const ch of s)n=n*26+ch.charCodeAt(0)-64;return n};
+const colName=n=>{let s='';while(n>0){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26)}return s};
+const DAYNAME={};
+const dLabel=dk=>DAYNAME[dk]||`${+dk.slice(0,2)}/${+dk.slice(2)}`;
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- xlsx の読み取り ---------- */
+function siText(si){let t='';for(const ch of si.children){if(ch.localName==='t')t+=ch.textContent;else if(ch.localName==='r')for(const x of ch.children)if(x.localName==='t')t+=x.textContent}return t}
+async function openBook(buf,name){
+  const zip=await JSZip.loadAsync(buf);
+  const parse=async p=>{const f=zip.file(p);return f?new DOMParser().parseFromString(await f.async('string'),'application/xml'):null};
+  const wb=await parse('xl/workbook.xml'),rels=await parse('xl/_rels/workbook.xml.rels');
+  if(!wb||!rels)throw new Error('Excelファイルとして読めませんでした');
+  const relMap={};for(const r of rels.getElementsByTagName('Relationship'))relMap[r.getAttribute('Id')]=r.getAttribute('Target');
+  const sheets=[...wb.getElementsByTagNameNS(NS,'sheet')].map(s=>{let t=relMap[s.getAttributeNS(RNS,'id')]||'';t=t.replace(/^\//,'');if(!t.startsWith('xl/'))t='xl/'+t;return{name:s.getAttribute('name'),path:t}});
+  const sstDoc=await parse('xl/sharedStrings.xml');const sst=[];
+  if(sstDoc)for(const si of sstDoc.getElementsByTagNameNS(NS,'si'))sst.push(siText(si));
+  return{zip,wb,sheets,sst,name};
+}
+async function readSheet(book,sheet){
+  const f=book.zip.file(sheet.path);
+  const doc=new DOMParser().parseFromString(await f.async('string'),'application/xml');
+  const rows=new Map();
+  for(const row of doc.getElementsByTagNameNS(NS,'row')){
+    const m=new Map();
+    for(const c of row.children){
+      if(c.localName!=='c')continue;
+      const col=colNum(c.getAttribute('r').match(/[A-Z]+/)[0]),t=c.getAttribute('t');
+      const ve=[...c.children].find(x=>x.localName==='v');let v=null;
+      if(t==='s'&&ve)v=book.sst[+ve.textContent];
+      else if(t==='inlineStr'){const is=[...c.children].find(x=>x.localName==='is');v=is?siText(is):null}
+      else if(t==='str'||t==='e')v=ve?ve.textContent:null;
+      else if(t==='b')v=ve?ve.textContent==='1':null;
+      else if(ve&&ve.textContent!=='')v=Number(ve.textContent);
+      if(v!==null&&v!=='')m.set(col,v);
+    }
+    rows.set(+row.getAttribute('r'),m);
+  }
+  return{doc,rows};
+}
+
+/* ---------- 申込者一覧の解釈 ---------- */
+const SLOT_RE=/(\d{1,2})\/(\d{1,2})[^0-9]*?(\d{1,2}):(\d{2})/;
+function parseSlot(text){
+  const m=norm(text).match(SLOT_RE);if(!m)return null;
+  return{dk:pad2(+m[1])+pad2(+m[2]),ampm:+m[3]<12?'午前':'午後'};
+}
+function parseGrade(raw){
+  const s=norm(raw).replace(/\s+/g,'');
+  let m;
+  if((m=s.match(/^小学?(\d)年?生?以下/)))return'小3以下';
+  if((m=s.match(/^小学?(\d)年/)))return+m[1]<=3?'小3以下':+m[1];
+  if((m=s.match(/^中学?(\d)年/)))return+m[1];
+  return raw;
+}
+function levelOf(gradeRaw,school){
+  const g=norm(gradeRaw),s=norm(school);
+  if(/^小/.test(g))return'中';
+  if(/^中/.test(g))return'高';
+  if(/小学校/.test(s))return'中';
+  if(/中学校/.test(s))return'高';
+  return null;
+}
+function parseApplicants(rows){
+  const hdr=rows.get(1);if(!hdr)return{recs:[],bad:0,hasSlot:false};
+  const idx={};hdr.forEach((v,c)=>{idx[norm(v)]=c});
+  const find=(...ks)=>{for(const k of ks)if(idx[k]!==undefined)return idx[k];for(const k of ks){const h=Object.keys(idx).find(h=>h.includes(k));if(h)return idx[h]}};
+  const C={no:find('イベント申込番号'),ts:find('申込完了日'),cancel:find('キャンセル'),sei:find('氏名(漢字)(姓)'),mei:find('氏名(漢字)(名)'),
+    ksei:find('氏名(カナ)(姓)'),kmei:find('氏名(カナ)(名)'),gender:find('性別'),school:find('出身校名称'),schoolO:find('出身校名称その他'),
+    jcode:find('塾コード'),juku:find('塾名称'),jukuO:find('塾名称その他'),grade:find('学年'),consult:find('個別相談')};
+  let slotCol;
+  const dataRows=[...rows.keys()].filter(r=>r>=2).sort((a,b)=>a-b);
+  for(const [c] of hdr){
+    if(dataRows.some(r=>{const v=rows.get(r).get(c);return typeof v==='string'&&/^\s*\d+\.\s*\d+\/\d+/.test(norm(v))})){slotCol=c;break}
+  }
+  const recs=[];let bad=0;
+  for(const r of dataRows){
+    const m=rows.get(r);if(!m.size||(C.sei!==undefined&&m.get(C.sei)==null))continue;
+    const g=k=>C[k]===undefined?'':String(m.get(C[k])??'').trim();
+    const slot=slotCol!==undefined?parseSlot(m.get(slotCol)||''):null;
+    const school=g('school')&&!/その他/.test(g('school'))?g('school'):(g('schoolO')||g('school'));
+    const noJuku=['J99999','J99998'].includes(norm(g('jcode')).replace(/\s/g,'').toUpperCase());
+    const juku=noJuku?g('jukuO'):(g('juku')&&!/その他/.test(g('juku'))?g('juku'):(g('jukuO')||g('juku')));
+    const lv=levelOf(g('grade'),school);
+    const rec={no:g('no'),ts:Number(m.get(C.ts))||0,
+      cancelled:g('cancel')!==''&&!norm(g('cancel')).includes('未キャンセル'),
+      lv,dk:slot&&slot.dk,ampm:slot&&slot.ampm,
+      name:`${g('sei')}　${g('mei')}`,kana:`${g('ksei')}　${g('kmei')}`,gender:g('gender'),
+      grade:parseGrade(g('grade')),jcode:noJuku?'':g('jcode'),juku,school,consult:g('consult')};
+    if(!rec.lv||!rec.dk){bad++;rec.bad=true}
+    recs.push(rec);
+  }
+  return{recs,bad,hasSlot:slotCol!==undefined};
+}
+const fromApp=a=>({no:null,lv:a.lv,name:a.name,kana:a.kana,gender:a.gender,grade:a.grade,jukuCode:a.jcode,juku:a.juku,school:a.school,ampm:a.ampm,consult:a.consult});
+
+/* ---------- 予約者一覧(完成形)の解釈 ---------- */
+const entryOf=(r,m)=>({row:r,no:typeof m.get(1)==='number'?m.get(1):(/電話/.test(String(m.get(1)||''))?'電話':null),phone:/電話/.test(String(m.get(1)||'')),lv:m.get(2)||'',name:m.get(3),kana:m.get(4)||'',gender:m.get(5)||'',grade:m.get(6)==null?'':m.get(6),
+  jukuCode:m.get(7)||'',juku:m.get(8)||'',school:m.get(9)||'',ampm:m.get(10)||'',consult:m.get(11)||''});
+function entriesFrom(rows,start){
+  const out=[];
+  for(const [r,m] of rows){if(r<start)continue;const n=m.get(3);if(n==null||String(n).trim()==='')continue;out.push(entryOf(r,m))}
+  return out.sort((a,b)=>a.row-b.row);
+}
+
+/* ---------- 反映ロジック ---------- */
+async function classify(file){
+  const buf=await file.arrayBuffer();
+  const book=await openBook(buf.slice(0),file.name);
+  const first=book.sheets[0];
+  const sh=await readSheet(book,first);
+  const hdr=sh.rows.get(1);
+  const isApp=hdr&&[...hdr.values()].some(v=>norm(v)==='イベント申込番号');
+  if(isApp){
+    const p=parseApplicants(sh.rows);
+    const lvs={};p.recs.forEach(r=>{if(r.lv)lvs[r.lv]=(lvs[r.lv]||0)+1});
+    const lv=Object.keys(lvs).sort((a,b)=>lvs[b]-lvs[a])[0]||null;
+    return{kind:'app',name:file.name,buf,lv,mixed:Object.keys(lvs).length>1,count:p.recs.length,bad:p.bad,hasSlot:p.hasSlot};
+  }
+  if(book.sheets.some(s=>/^\d{4}$/.test(s.name)||/^\d+日目$/.test(s.name)))return{kind:'book',name:file.name,buf,sheets:book.sheets.map(s=>s.name)};
+  return{kind:'unknown',name:file.name};
+}
+
+async function reconcile(bookBuf,appFiles,opts){
+  const book=await openBook(bookBuf.slice(0),'book');
+  const byName=Object.fromEntries(book.sheets.map(s=>[s.name,s]));
+  const daySheets=[];
+  for(const sh of book.sheets.filter(x=>/^\d{4}$/.test(x.name)||/^\d+日目$/.test(x.name))){
+    const ms=await readSheet(book,sh);
+    let dk=/^\d{4}$/.test(sh.name)?sh.name:null;
+    if(!dk){const t=norm((ms.rows.get(2)||new Map()).get(1)||'');const m=t.match(/(\d{1,2})月(\d{1,2})日/);if(m)dk=pad2(+m[1])+pad2(+m[2])}
+    if(!dk)throw new Error(`「${sh.name}」シートのA2に日付(例:2026年9月19日(土))が見つかりません。`);
+    daySheets.push({sh,ms,dk});
+  }
+  daySheets.sort((x,y)=>x.dk.localeCompare(y.dk));
+  const dates=daySheets.map(d=>d.dk);
+  const dayNo={};for(const k of Object.keys(DAYNAME))delete DAYNAME[k];
+  dates.forEach((dk,i)=>{dayNo[dk]=i+1;DAYNAME[dk]=`${i+1}日目`});
+  const cancelName=dk=>[`${dayNo[dk]}日目キャンセル`,`${+dk.slice(0,2)}${dk.slice(2)}キャンセル`,`${dk}キャンセル`].find(n=>byName[n]);
+  const exName=dk=>[`${dayNo[dk]}日目_フリガナ順`,`${dk}_フリガナ順`].find(n=>byName[n]);
+  const S={};
+  for(const d of daySheets){
+    const dk=d.dk,ms=d.ms;
+    const cn=cancelName(dk);
+    const cs=cn?await readSheet(book,byName[cn]):null;
+    S[dk]={main:ms,mainSheet:d.sh,cancelSheet:cn?byName[cn]:null,cancelDoc:cs,
+      entries:entriesFrom(ms.rows,4),cancel:cs?entriesFrom(cs.rows,3):[],newCancel:[]};
+  }
+  for(const dk of dates)S[dk].used=new Set([...S[dk].entries,...S[dk].cancel].map(e=>e.no).filter(n=>typeof n==='number'));
+  const nextNo=st=>{let n=1;for(const x of st.used)if(x>=n)n=x+1;st.used.add(n);return n};
+  const warns=[],log=[];
+  const levels=new Set();let apps=[];
+  for(const f of appFiles){
+    const b=await openBook(f.buf.slice(0),f.name);const sh=await readSheet(b,b.sheets[0]);
+    const p=parseApplicants(sh.rows);
+    p.recs.forEach(r=>{if(r.lv)levels.add(r.lv)});apps.push(...p.recs);
+  }
+  const bad=apps.filter(a=>a.bad);
+  if(bad.length)warns.push(`学年や日程が読み取れない申込が${bad.length}件あり、反映から除きました(${bad.slice(0,3).map(a=>a.name).join('、')}${bad.length>3?' ほか':''})。`);
+  const okApps=apps.filter(a=>!a.bad);
+  const active=okApps.filter(a=>!a.cancelled);
+  const cancelledKeys=new Set(okApps.filter(a=>a.cancelled).map(a=>a.lv+'|'+nameKey(a.name)));
+  const pool=new Map();
+  active.slice().sort((a,b)=>a.ts-b.ts).forEach(a=>{const k=a.lv+'|'+nameKey(a.name);if(!pool.has(k))pool.set(k,[]);pool.get(k).push(a)});
+  const takeMatch=(lv,name,kana)=>{
+    const arr=pool.get(lv+'|'+nameKey(name));if(!arr||!arr.length)return null;
+    let i=arr.findIndex(a=>nameKey(a.kana)===nameKey(kana));if(i<0)i=0;
+    const a=arr.splice(i,1)[0];if(!arr.length)pool.delete(lv+'|'+nameKey(name));return a;
+  };
+  let phoneN=0;const moved=[];const unchanged={};dates.forEach(d=>unchanged[d]=0);
+  for(const dk of dates){
+    const st=S[dk],keep=[];
+    for(const e of st.entries){
+      if(e.phone){phoneN++;keep.push(e);continue}
+      if(!levels.has(e.lv)){keep.push(e);continue}
+      const a=takeMatch(e.lv,e.name,e.kana);
+      if(!a){
+        st.newCancel.push(e);
+        log.push({kind:'cancel',dk,lv:e.lv,name:e.name,detail:cancelledKeys.has(e.lv+'|'+nameKey(e.name))?'申込者一覧でキャンセル済み':'申込者一覧に名前なし'});
+        continue;
+      }
+      if(a.dk!==dk){
+        moved.push({a,from:dk,fromAmpm:e.ampm});
+        const mv=`${dLabel(dk)} ${e.ampm} → ${dLabel(a.dk)} ${a.ampm}`;
+        log.push({kind:'moveout',dk,lv:e.lv,name:e.name,detail:mv});
+        log.push({kind:'add',dk:a.dk,lv:e.lv,name:e.name,detail:mv+'(移動)'});
+        continue;
+      }
+      let changed=false;
+      if(e.ampm!==a.ampm){log.push({kind:'time',dk,lv:e.lv,name:e.name,detail:`${e.ampm||'(空)'} → ${a.ampm}`});e.ampm=a.ampm;changed=true}
+      if(a.consult&&e.consult!==a.consult){log.push({kind:'consult',dk,lv:e.lv,name:e.name,detail:`個別相談 ${e.consult||'(空)'} → ${a.consult}`});e.consult=a.consult;changed=true}
+      if(!changed)unchanged[dk]++;
+      keep.push(e);
+    }
+    st.entries=keep;
+  }
+  const incoming=[...moved.map(m=>({a:m.a})),...[...pool.values()].flat().map(a=>({a,fresh:true}))].sort((x,y)=>x.a.ts-y.a.ts);
+  for(const it of incoming){
+    const a=it.a,st=S[a.dk];
+    if(!st){warns.push(`${dLabel(a.dk)}のシートが文化祭.xlsxにないため、${a.name}さんは反映できませんでした。`);continue}
+    let restore=null;
+    if(it.fresh){
+      let re=false;
+      for(const d of dates){
+        const i=S[d].cancel.findIndex(c=>c.lv===a.lv&&nameKey(c.name)===nameKey(a.name));
+        if(i>=0){if(d===a.dk)restore=S[d].cancel[i].no;S[d].cancel.splice(i,1);re=true}
+      }
+      log.push({kind:re?'readd':'add',dk:a.dk,lv:a.lv,name:a.name,detail:`${a.ampm}${re?'(キャンセル欄から戻しました)':''}`});
+    }
+    const ne=fromApp(a);
+    ne.no=restore!=null&&!st.entries.some(x=>x.no===restore)?restore:nextNo(st);
+    st.entries.push(ne);
+  }
+  for(const dk of dates)for(const e of S[dk].entries)if(e.no==null)e.no=nextNo(S[dk]);
+  if(phoneN)warns.push(`№が「電話」の${phoneN}件は、申込者一覧になくてもそのまま残しました。`);
+  // 並び順
+  const kanaSorted=list=>list.slice().sort((x,y)=>{
+    const ax=x.ampm==='午前'?0:1,ay=y.ampm==='午前'?0:1;if(ax!==ay)return ax-ay;
+    return kanaCompare(x.kana,y.kana)});
+  if(!opts.keep&&opts.kana)for(const dk of dates)S[dk].entries=kanaSorted(S[dk].entries);
+  for(const dk of dates)S[dk].cancel.push(...S[dk].newCancel);
+  // 書き込み
+  for(const dk of dates){
+    const st=S[dk];
+    writeSheet(st.main.doc,st.entries,4,true);
+    if(st.cancelSheet){
+      writeSheet(st.cancelDoc.doc,st.cancel,3,false);
+      const d1=[...st.cancelDoc.doc.getElementsByTagNameNS(NS,'c')].find(c=>c.getAttribute('r')==='D1');
+      if(d1)setStr(d1,`${dayNo[dk]}日目キャンセル`);
+    }
+    book.zip.file(st.mainSheet.path,serialize(st.main.doc));
+    if(st.cancelSheet)book.zip.file(st.cancelSheet.path,serialize(st.cancelDoc.doc));
+  }
+  const extra=[],extraNames=[];
+  const wantExtra=opts.keep&&opts.kana;
+  if(!wantExtra&&dates.some(dk=>exName(dk)))warns.push('前回作ったフリガナ順シートは、今回は更新していません(古い内容のままです)。');
+  if(wantExtra){
+    let maxId=Math.max(...[...book.wb.getElementsByTagNameNS(NS,'sheet')].map(x=>+x.getAttribute('sheetId')));
+    let rels=await book.zip.file('xl/_rels/workbook.xml.rels').async('string');
+    let ct=await book.zip.file('[Content_Types].xml').async('string');
+    const sdoc=new DOMParser().parseFromString(await book.zip.file('xl/styles.xml').async('string'),'application/xml');
+    const styler=makeStyler(sdoc);
+    dates.forEach((dk,i)=>{
+      const d2=S[dk].main.doc.cloneNode(true);
+      const sorted=kanaSorted(S[dk].entries);
+      writeSheet(d2,sorted,4,true);
+      decorateKana(d2,sorted,styler);
+      for(const sv of d2.getElementsByTagNameNS(NS,'sheetView'))sv.removeAttribute('tabSelected');
+      for(const af of [...d2.getElementsByTagNameNS(NS,'autoFilter')])af.parentNode.removeChild(af);
+      for(const ps of d2.getElementsByTagNameNS(NS,'pageSetup'))ps.removeAttributeNS(RNS,'id');
+      d2.documentElement.removeAttribute('xr:uid');
+      const name=`${dayNo[dk]}日目_フリガナ順`,exist=exName(dk)?byName[exName(dk)]:null;
+      extraNames.push(name);
+      if(exist){book.zip.file(exist.path,serialize(d2));return}
+      const path=`xl/worksheets/sheet${100+i}.xml`,rid=`rIdKana${i}`;
+      book.zip.file(path,serialize(d2));
+      rels=rels.replace('</Relationships>',`<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${100+i}.xml"/></Relationships>`);
+      ct=ct.replace('</Types>',`<Override PartName="/${path}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`);
+      extra.push({name,rid,id:++maxId});
+    });
+    book.zip.file('xl/styles.xml',serialize(sdoc));
+    book.zip.file('xl/_rels/workbook.xml.rels',rels);book.zip.file('[Content_Types].xml',ct);
+  }
+  let wbx=await book.zip.file('xl/workbook.xml').async('string');
+  wbx=/<calcPr[^>]*fullCalcOnLoad/.test(wbx)?wbx:wbx.replace(/<calcPr\b/,'<calcPr fullCalcOnLoad="1"');
+  const ren=(o,n)=>{if(!o||o===n)return;wbx=wbx.split(`name="${o}"`).join(`name="${n}"`).split(`'${o}'!`).join(`'${n}'!`)};
+  for(const dk of dates){
+    ren(S[dk].mainSheet.name,`${dayNo[dk]}日目`);
+    if(S[dk].cancelSheet)ren(S[dk].cancelSheet.name,`${dayNo[dk]}日目キャンセル`);
+    if(exName(dk))ren(exName(dk),`${dayNo[dk]}日目_フリガナ順`);
+  }
+  if(extra.length)wbx=wbx.replace('</sheets>',extra.map(x=>`<sheet name="${x.name}" sheetId="${x.id}" r:id="${x.rid}"/>`).join('')+'</sheets>');
+  book.zip.file('xl/workbook.xml',wbx);
+  const bytes=await book.zip.generateAsync({type:'uint8array',compression:'DEFLATE'});
+  const counts=dates.map(dk=>{
+    const e=S[dk].entries;
+    return{dk,am:e.filter(x=>x.ampm==='午前').length,pm:e.filter(x=>x.ampm==='午後').length,mid:e.filter(x=>x.lv==='中').length,high:e.filter(x=>x.lv==='高').length,
+      consult:e.filter(x=>x.consult==='希望する').length,total:e.length,cancel:S[dk].cancel.length};
+  });
+  const missing=dates.filter(d=>!S[d].cancelSheet);
+  if(missing.length)warns.push(`${missing.map(dLabel).join('、')}のキャンセル用シートが見つからないため、キャンセルの記録先がありません。`);
+  [...levels].length<2&&warns.unshift(`${[...levels].map(l=>l==='中'?'中学の申込者一覧':'高校の申込者一覧')[0]||'申込者一覧'}だけを読み込んだため、${levels.has('中')?'高校':'中学'}の予約者は触らずにそのまま残しています。`);
+  return{bytes,log,counts,unchanged,warns,extra:extraNames};
+}
+
+/* ---------- シートXMLの書き換え(書式・条件付き書式はそのまま) ---------- */
+function serialize(doc){return'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'+new XMLSerializer().serializeToString(doc.documentElement)}
+function writeSheet(doc,list,start,numbered){
+  const sd=doc.getElementsByTagNameNS(NS,'sheetData')[0];
+  const rowMap=new Map();for(const r of sd.children)rowMap.set(+r.getAttribute('r'),r);
+  const lastR=Math.max(...rowMap.keys());
+  const tmpl=rowMap.get(start);
+  const need=start+list.length-1;
+  for(let r=lastR+1;r<=need;r++){
+    const nr=tmpl.cloneNode(true);nr.setAttribute('r',r);
+    for(const c of [...nr.children]){c.setAttribute('r',c.getAttribute('r').replace(/\d+/,r));clearCell(c);if(c.getAttribute('r').startsWith('A')&&numbered)setNum(c,r-start+1)}
+    sd.appendChild(nr);rowMap.set(r,nr);
+  }
+  if(need>lastR){const d=doc.getElementsByTagNameNS(NS,'dimension')[0];if(d)d.setAttribute('ref',d.getAttribute('ref').replace(/\d+$/,need))}
+  const maxR=Math.max(...rowMap.keys());
+  const vals=['lv','name','kana','gender','grade','jukuCode','juku','school','ampm','consult'];
+  for(let r=start;r<=maxR;r++){
+    const row=rowMap.get(r);if(!row)continue;
+    const e=list[r-start];
+    const cells={};for(const c of row.children)cells[c.getAttribute('r').replace(/\d+/,'')]=c;
+    if(cells.A){if(e&&typeof e.no==='number')setNum(cells.A,e.no);else if(e&&e.no!=null)setStr(cells.A,String(e.no));else clearCell(cells.A)}
+    vals.forEach((k,i)=>{
+      const c=cells[colName(2+i)];if(!c)return;
+      if(!e){if(c.firstChild||c.hasAttribute('t'))clearCell(c);return}
+      const v=e[k];
+      if(typeof v==='number')setNum(c,v);else setStr(c,v==null?'':String(v));
+    });
+  }
+}
+
+/* ---------- フリガナ順シートの見た目(索引列・午前午後の赤線) ---------- */
+const SMALL={'ァ':'ア','ィ':'イ','ゥ':'ウ','ェ':'エ','ォ':'オ','ッ':'ツ','ャ':'ヤ','ュ':'ユ','ョ':'ヨ','ヮ':'ワ'};
+
+/* ---------- 50音順(濁点・半濁点を無視、同じ読みなら 清音→濁点→半濁点) ---------- */
+const VOWEL_ROWS=['アイウエオ','カキクケコ','サシスセソ','タチツテト','ナニヌネノ','ハヒフヘホ','マミムメモ','ヤ_ユ_ヨ','ラリルレロ','ワヰ_ヱヲ'];
+const VOWEL_OF={};VOWEL_ROWS.forEach(r=>[...r].forEach((c,i)=>{if(c!=='_')VOWEL_OF[c]='アイウエオ'[i]}));
+function kanaKey(str){
+  const chars=[...String(str||'').normalize('NFKC').normalize('NFD')];
+  let p='',mark=[],small=[];
+  for(const ch of chars){
+    const code=ch.codePointAt(0);
+    if(code===0x3099||code===0x309A){if(mark.length)mark[mark.length-1]=code===0x3099?1:2;continue}
+    let c=code>=0x3041&&code<=0x3096?String.fromCodePoint(code+0x60):ch;
+    let sm=0;if(SMALL[c]){c=SMALL[c];sm=1}
+    if(c==='ー'&&p&&VOWEL_OF[p[p.length-1]])c=VOWEL_OF[p[p.length-1]];
+    p+=c;mark.push(0);small.push(sm);
+  }
+  return{p,mark,small};
+}
+function cmpArr(a,b){for(let i=0;i<Math.max(a.length,b.length);i++){const d=(a[i]||0)-(b[i]||0);if(d)return d}return 0}
+function kanaCompare(x,y){
+  const a=kanaKey(x),b=kanaKey(y);
+  if(a.p!==b.p)return a.p<b.p?-1:1;
+  return cmpArr(a.mark,b.mark)||cmpArr(a.small,b.small)||String(x).localeCompare(String(y),'ja');
+}
+function kanaHead(k){
+  let ch=String(k||'').trim().normalize('NFD')[0]||'';
+  const code=ch.codePointAt(0)||0;
+  if(code>=0x3041&&code<=0x3096)ch=String.fromCodePoint(code+0x60);
+  return SMALL[ch]||ch||'他';
+}
+function shiftRefs(f){
+  const sh=l=>colNum(l)>=4?colName(colNum(l)+1):l;
+  return f.split('"').map((seg,i)=>i%2?seg:seg.replace(/\b([A-Z]{1,2})(\d*):([A-Z]{1,2})(\d*)\b|\b([A-Z]{1,2})(\d+)\b/g,(m,a,b,c,d,e,f2)=>e?sh(e)+f2:sh(a)+b+':'+sh(c)+d)).join('"');
+}
+function insertColumnD(doc){
+  const sd=doc.getElementsByTagNameNS(NS,'sheetData')[0];
+  for(const row of sd.children){
+    row.removeAttribute('spans');
+    const cells=[...row.children];
+    for(const c of cells){
+      const m=c.getAttribute('r').match(/^([A-Z]+)(\d+)$/);
+      if(colNum(m[1])>=4)c.setAttribute('r',colName(colNum(m[1])+1)+m[2]);
+      const f=[...c.children].find(x=>x.localName==='f');
+      if(f&&f.textContent)f.textContent=shiftRefs(f.textContent);
+    }
+    if(+row.getAttribute('r')>=3){
+      const cC=cells.find(c=>c.getAttribute('r').startsWith('C')&&/^C\d+$/.test(c.getAttribute('r')));
+      if(cC){const nd=cC.cloneNode(true);nd.setAttribute('r','D'+row.getAttribute('r'));clearCell(nd);cC.after(nd)}
+    }
+  }
+  for(const mc of doc.getElementsByTagNameNS(NS,'mergeCell'))mc.setAttribute('ref',shiftRefs(mc.getAttribute('ref')));
+  const cols=doc.getElementsByTagNameNS(NS,'cols')[0];
+  if(cols){
+    let c3=null;
+    for(const c of [...cols.children]){
+      const mn=+c.getAttribute('min'),mx=+c.getAttribute('max');
+      if(mn===3&&mx===3)c3=c;
+      if(mn>=4){c.setAttribute('min',mn+1);c.setAttribute('max',mx>=16384?mx:mx+1)}
+    }
+    if(c3){const nc=c3.cloneNode(true);nc.setAttribute('min',4);nc.setAttribute('max',4);nc.setAttribute('width','5.25');nc.setAttribute('customWidth','1');c3.after(nc)}
+  }
+  const dim=doc.getElementsByTagNameNS(NS,'dimension')[0];
+  if(dim)dim.setAttribute('ref',dim.getAttribute('ref').replace(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/,(m,a,b,c,d)=>a+b+':'+colName(colNum(c)+1)+d));
+}
+function makeStyler(sdoc){
+  const xfs=sdoc.getElementsByTagNameNS(NS,'cellXfs')[0],borders=sdoc.getElementsByTagNameNS(NS,'borders')[0];
+  const memo={};
+  return(sId,side)=>{
+    const key=sId+'|'+side;if(memo[key]!==undefined)return memo[key];
+    const xf=xfs.children[sId].cloneNode(true);
+    const b=borders.children[+xf.getAttribute('borderId')||0].cloneNode(true);
+    const old=[...b.children].find(x=>x.localName===side);
+    const nu=sdoc.createElementNS(NS,side);nu.setAttribute('style','thick');
+    const col=sdoc.createElementNS(NS,'color');col.setAttribute('rgb','FFFF0000');nu.appendChild(col);
+    if(old)b.replaceChild(nu,old);else b.insertBefore(nu,b.firstChild);
+    borders.appendChild(b);borders.setAttribute('count',borders.children.length);
+    xf.setAttribute('borderId',borders.children.length-1);xf.setAttribute('applyBorder','1');
+    xfs.appendChild(xf);xfs.setAttribute('count',xfs.children.length);
+    return memo[key]=xfs.children.length-1;
+  };
+}
+function decorateKana(doc,list,styler){
+  insertColumnD(doc);
+  const sd=doc.getElementsByTagNameNS(NS,'sheetData')[0];
+  const rowMap=new Map();for(const r of sd.children)rowMap.set(+r.getAttribute('r'),r);
+  const cell=(r,col)=>{const row=rowMap.get(r);return row&&[...row.children].find(c=>c.getAttribute('r')===col+r)};
+  // 索引列(ア・イ…)を、午前・午後それぞれで同じ頭文字ごとに縦に結合
+  const merges=[];let i=0;
+  while(i<list.length){
+    const key=list[i].ampm+'|'+kanaHead(list[i].kana);let j=i;
+    while(j+1<list.length&&list[j+1].ampm+'|'+kanaHead(list[j+1].kana)===key)j++;
+    const c=cell(4+i,'D');if(c)setStr(c,kanaHead(list[i].kana));
+    if(j>i)merges.push(`D${4+i}:D${4+j}`);
+    i=j+1;
+  }
+  const mcs=doc.getElementsByTagNameNS(NS,'mergeCells')[0];
+  if(mcs){for(const ref of merges){const m=doc.createElementNS(NS,'mergeCell');m.setAttribute('ref',ref);mcs.appendChild(m)}mcs.setAttribute('count',mcs.children.length)}
+  // 午前と午後の境目に赤い太線
+  const k=list.findIndex(e=>e.ampm!=='午前');
+  if(k>0){
+    for(const [r,side] of [[4+k-1,'bottom'],[4+k,'top']])
+      for(let ci=1;ci<=12;ci++){const c=cell(r,colName(ci));if(c)c.setAttribute('s',styler(+c.getAttribute('s')||0,side))}
+  }
+}
+function clearCell(c){c.removeAttribute('t');while(c.firstChild)c.removeChild(c.firstChild)}
+function setNum(c,n){clearCell(c);const v=c.ownerDocument.createElementNS(NS,'v');v.textContent=String(n);c.appendChild(v)}
+function setStr(c,s){
+  clearCell(c);if(s==='')return;
+  const d=c.ownerDocument;c.setAttribute('t','inlineStr');
+  const is=d.createElementNS(NS,'is'),t=d.createElementNS(NS,'t');
+  t.setAttributeNS('http://www.w3.org/XML/1998/namespace','xml:space','preserve');t.textContent=s;is.appendChild(t);c.appendChild(is);
+}
+
+/* ---------- 画面 ---------- */
+const state={book:null,apps:{},unknown:[],result:null,busy:false,seq:0};
+const KIND={add:'追加',readd:'再申込',movein:'移動(入)',moveout:'移動(出)',time:'時間変更',consult:'個別相談変更',cancel:'キャンセル'};
+function renderSlots(){
+  const a=state.apps;
+  const slot=(on,role,hint,got,fname)=>`<div class="slot${on?' on':''}"><div class="role">${role}</div>${on?`<div class="got">${got}</div><div class="fname">${esc(fname)}</div>`:`<div class="hint">${hint}</div>`}</div>`;
+  $('slots').innerHTML=
+    slot(a['中'],'中学の申込者一覧','小学生が申し込んだリスト',a['中']&&`${a['中'].count}件を読み込み`,a['中']&&a['中'].name)+
+    slot(a['高'],'高校の申込者一覧','中学生が申し込んだリスト',a['高']&&`${a['高'].count}件を読み込み`,a['高']&&a['高'].name)+
+    slot(state.book,'予約者一覧','日程シートとキャンセルシートのあるExcel',state.book&&`${state.book.sheets.join('・')}`,state.book&&state.book.name);
+}
+function setMsgs(list){$('msgs').innerHTML=list.map(m=>`<div class="msg${m.err?' err':''}">${esc(m.t)}</div>`).join('')}
+async function addFiles(fileList){
+  const msgs=[];
+  for(const f of fileList){
+    if(!/\.xlsx$/i.test(f.name)){msgs.push({t:`${f.name}:.xlsxのファイルを選んでください。`,err:1});continue}
+    try{
+      const c=await classify(f);
+      if(c.kind==='book')state.book=c;
+      else if(c.kind==='app'){
+        if(!c.lv){msgs.push({t:`${f.name}:中学・高校の区別がつかず読み込めませんでした。`,err:1});continue}
+        if(c.mixed)msgs.push({t:`${f.name}:中学と高校の申込が混ざっています。行ごとに判別して反映します。`});
+        if(!c.hasSlot)msgs.push({t:`${f.name}:参加日時の列が見つかりません。`,err:1});
+        state.apps[c.lv]=c;
+      }else msgs.push({t:`${f.name}:申込者一覧にも文化祭の予約者一覧にも見えませんでした。`,err:1});
+    }catch(e){msgs.push({t:`${f.name}:${e.message||'読み込みに失敗しました'}`,err:1})}
+  }
+  renderSlots();setMsgs(msgs);await run(msgs);
+}
+const getOpts=()=>({keep:$('o-keep').checked,kana:$('o-kana').checked});
+async function run(baseMsgs){
+  const my=++state.seq;
+  if(!getOpts().keep&&!getOpts().kana){$('result').innerHTML='';setMsgs([{t:'並び順のチェックを1つ以上入れてください。',err:1}]);return}
+  const apps=Object.values(state.apps);
+  if(!state.book||!apps.length){$('result').innerHTML=state.book||apps.length?'<div class="empty">あと、'+[!state.book&&'予約者一覧',!apps.length&&'中学・高校の申込者一覧'].filter(Boolean).join(' と ')+'を入れると、結果がここに出ます。</div>':'<div class="empty">3つのExcelを入れると、更新結果と変更一覧がここに出ます。</div>';return}
+  $('result').innerHTML='<div class="empty">反映しています…</div>';
+  try{
+    const r=await reconcile(state.book.buf,apps,getOpts());
+    if(my!==state.seq)return;
+    state.result=r;setMsgs([...(baseMsgs||[]),...r.warns.map(t=>({t}))]);renderResult(r);
+  }catch(e){console.error(e);$('result').innerHTML='';setMsgs([{t:'反映中にエラーが出ました:'+(e.message||e),err:1}])}
+}
+function renderResult(r){
+  const order={add:0,readd:1,movein:2,moveout:3,time:4,consult:5,cancel:6};
+  const secs=r.counts.map(c=>{
+    const L=r.log.filter(l=>l.dk===c.dk);
+    const n=k=>L.filter(l=>l.kind===k).length;
+    const tiles=[['追加',n('add')+n('readd')],['移動で減った',n('moveout')],['時間変更',n('time')],['個別相談の変更',n('consult')],['キャンセル',n('cancel')],['変更なし',r.unchanged[c.dk]||0]]
+      .map(([l,v])=>`<div class="tile"><b>${v}</b><span>${l}</span></div>`).join('');
+    const rows=L.slice().sort((a,b)=>order[a.kind]-order[b.kind]).map(l=>`<tr><td><span class="chip ${l.kind}">${KIND[l.kind]}</span></td><td>${l.lv==='中'?'中':'高'}</td><td>${esc(l.name)}</td><td>${esc(l.detail)}</td></tr>`).join('');
+    return `<div class="panel"><h2 style="font-size:17px;color:var(--fg);margin:0">${dLabel(c.dk)}の更新結果</h2>
+      <div class="tiles">${tiles}</div>
+      <div class="scroll"><table><thead><tr><th>更新後</th><th class="n">午前</th><th class="n">午後</th><th class="n">合計</th><th class="n">中</th><th class="n">高</th><th class="n">個別相談希望</th><th class="n">キャンセル累計</th></tr></thead><tbody><tr><td>${dLabel(c.dk)}</td><td class="n">${c.am}</td><td class="n">${c.pm}</td><td class="n"><b>${c.total}</b></td><td class="n">${c.mid}</td><td class="n">${c.high}</td><td class="n">${c.consult}</td><td class="n">${c.cancel}</td></tr></tbody></table></div>
+      <details><summary>${dLabel(c.dk)}の変更一覧を見る(${L.length}件)</summary><div class="scroll">${L.length?`<table><thead><tr><th>内容</th><th>中高</th><th>氏名</th><th>詳細</th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="note">変更はありません。</p>'}</div></details></div>`;
+  }).join('');
+  $('result').innerHTML=`<div style="display:flex;flex-direction:column;gap:16px">${secs}
+    <div class="actions"><button class="primary" id="save" type="button">更新後の文化祭.xlsxを保存</button><span class="note" id="savemsg">元のファイルは変更されません。${r.extra.length?"追加するシート:"+r.extra.join("、"):""}</span></div></div>`;
+  $('save').onclick=save;
+}
+async function save(){
+  const m=$('savemsg');
+  try{
+    let d=null;
+    try{d=window.claude&&await window.claude.use('downloads')}catch(_){d=null}
+    const base=(state.book.name||'文化祭.xlsx').replace(/\.xlsx$/i,'');
+    const filename=`${base}_更新.xlsx`;
+    if(d)await d.save({filename,data:state.result.bytes});
+    else{
+      const url=URL.createObjectURL(new Blob([state.result.bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+      const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),10000);
+    }
+    m.className='ok-text';m.textContent='保存しました。ダウンロードフォルダを確認してください。';
+  }catch(e){m.className='note';m.textContent=e&&e.code==='declined'?'保存を取りやめました。':'保存できませんでした('+(e&&e.message||e)+')';}
+}
+const drop=$('drop'),pick=$('pick');
+drop.onclick=()=>pick.click();
+drop.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick.click()}};
+pick.onchange=()=>{addFiles([...pick.files]);pick.value=''};
+for(const ev of['dragenter','dragover'])document.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over')});
+for(const ev of['dragleave','drop'])document.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over')});
+document.addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files.length)addFiles([...e.dataTransfer.files])});
+$('o-keep').onchange=$('o-kana').onchange=()=>run([]);
+renderSlots();run([]);
+window.__bunkasai={addFiles,state};
+})();
+</script>
+
+</body></html>
