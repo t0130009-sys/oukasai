@@ -58,7 +58,7 @@ td.n,th.n{text-align:right}
 .chip{display:inline-block;font-size:12px;font-weight:700;padding:1px 9px;border-radius:99px;background:var(--info-soft);color:var(--info)}
 .chip.add{background:var(--ok-soft);color:var(--ok)}
 .chip.cancel{background:var(--bad-soft);color:var(--bad)}
-.chip.movein,.chip.moveout,.chip.time,.chip.consult{background:var(--warn-soft);color:var(--warn)}
+.chip.movein,.chip.moveout,.chip.time,.chip.consult,.chip.dup{background:var(--warn-soft);color:var(--warn)}
 .chip.readd{background:var(--info-soft);color:var(--info)}
 details{border:1px solid var(--line);border-radius:6px}
 summary{cursor:pointer;padding:10px 14px;font-weight:700;font-size:14px}
@@ -269,22 +269,41 @@ async function reconcile(bookBuf,appFiles,opts){
   const bad=apps.filter(a=>a.bad);
   if(bad.length)warns.push(`学年や日程が読み取れない申込が${bad.length}件あり、反映から除きました(${bad.slice(0,3).map(a=>a.name).join('、')}${bad.length>3?' ほか':''})。`);
   const okApps=apps.filter(a=>!a.bad);
-  const active=okApps.filter(a=>!a.cancelled);
+  // 同じ人が全く同じ条件(日程・午前午後)で重複して申し込んでいたら、先に申し込んだ1件だけを残す
+  const seen=new Set(),dupNames=[];
+  const active=okApps.filter(a=>!a.cancelled).sort((x,y)=>x.ts-y.ts).filter(a=>{
+    const k=[a.lv,nameKey(a.name),a.dk,a.ampm].join('|');
+    if(seen.has(k)){dupNames.push(`${a.name}(${dLabel(a.dk)})`);return false}
+    seen.add(k);return true;
+  });
+  if(dupNames.length)warns.push(`同じ人が同じ日程・同じ時間で重複して申し込んでいたため、重複分の${dupNames.length}件を除きました(${dupNames.slice(0,3).join('、')}${dupNames.length>3?' ほか':''})。`);
   const cancelledKeys=new Set(okApps.filter(a=>a.cancelled).map(a=>a.lv+'|'+nameKey(a.name)));
   const pool=new Map();
   active.slice().sort((a,b)=>a.ts-b.ts).forEach(a=>{const k=a.lv+'|'+nameKey(a.name);if(!pool.has(k))pool.set(k,[]);pool.get(k).push(a)});
-  const takeMatch=(lv,name,kana)=>{
+  const takeMatch=(lv,name,kana,dk,ampm)=>{
     const arr=pool.get(lv+'|'+nameKey(name));if(!arr||!arr.length)return null;
-    let i=arr.findIndex(a=>nameKey(a.kana)===nameKey(kana));if(i<0)i=0;
+    // 同じ人が1日目・2日目の両方に申し込んでいるときは、同じ日程の申込を優先して対応づける
+    const score=a=>(a.dk===dk?4:0)+(a.dk===dk&&a.ampm===ampm?2:0)+(nameKey(a.kana)===nameKey(kana)?1:0);
+    let i=0;for(let j=1;j<arr.length;j++)if(score(arr[j])>score(arr[i]))i=j;
     const a=arr.splice(i,1)[0];if(!arr.length)pool.delete(lv+'|'+nameKey(name));return a;
   };
+  // 同じ日程・同じ時間に同じ人が重複していたら1件だけ残す(時間や日程が違えばそのまま残す。電話の行を優先)
+  const dedupe=dk=>{
+    const st=S[dk],kOf=e=>[e.lv,nameKey(e.name),e.ampm].join('|'),pick=new Map();
+    st.entries.forEach((e,i)=>{const k=kOf(e),cur=pick.get(k);if(cur===undefined||(e.phone&&!st.entries[cur].phone))pick.set(k,i)});
+    st.entries=st.entries.filter((e,i)=>{
+      if(pick.get(kOf(e))===i)return true;
+      log.push({kind:'dup',dk,lv:e.lv,name:e.name,detail:`${e.ampm}に同じ人が重複${e.no==null?'':`(№${e.no}を削除)`}`});return false;
+    });
+  };
+  for(const dk of dates)dedupe(dk);
   let phoneN=0;const moved=[];const unchanged={};dates.forEach(d=>unchanged[d]=0);
   for(const dk of dates){
     const st=S[dk],keep=[];
     for(const e of st.entries){
       if(e.phone){phoneN++;keep.push(e);continue}
       if(!levels.has(e.lv)){keep.push(e);continue}
-      const a=takeMatch(e.lv,e.name,e.kana);
+      const a=takeMatch(e.lv,e.name,e.kana,dk,e.ampm);
       if(!a){
         st.newCancel.push(e);
         log.push({kind:'cancel',dk,lv:e.lv,name:e.name,detail:cancelledKeys.has(e.lv+'|'+nameKey(e.name))?'申込者一覧でキャンセル済み':'申込者一覧に名前なし'});
@@ -322,6 +341,7 @@ async function reconcile(bookBuf,appFiles,opts){
     ne.no=restore!=null&&!st.entries.some(x=>x.no===restore)?restore:nextNo(st);
     st.entries.push(ne);
   }
+  for(const dk of dates)dedupe(dk);
   for(const dk of dates)for(const e of S[dk].entries)if(e.no==null)e.no=nextNo(S[dk]);
   if(phoneN)warns.push(`№が「電話」の${phoneN}件は、申込者一覧になくてもそのまま残しました。`);
   // 並び順
@@ -540,7 +560,7 @@ function setStr(c,s){
 
 /* ---------- 画面 ---------- */
 const state={book:null,apps:{},unknown:[],result:null,busy:false,seq:0};
-const KIND={add:'追加',readd:'再申込',movein:'移動(入)',moveout:'移動(出)',time:'時間変更',consult:'個別相談変更',cancel:'キャンセル'};
+const KIND={add:'追加',readd:'再申込',movein:'移動(入)',moveout:'移動(出)',time:'時間変更',consult:'個別相談変更',cancel:'キャンセル',dup:'重複削除'};
 function renderSlots(){
   const a=state.apps;
   const slot=(on,role,hint,got,fname)=>`<div class="slot${on?' on':''}"><div class="role">${role}</div>${on?`<div class="got">${got}</div><div class="fname">${esc(fname)}</div>`:`<div class="hint">${hint}</div>`}</div>`;
@@ -581,11 +601,11 @@ async function run(baseMsgs){
   }catch(e){console.error(e);$('result').innerHTML='';setMsgs([{t:'反映中にエラーが出ました:'+(e.message||e),err:1}])}
 }
 function renderResult(r){
-  const order={add:0,readd:1,movein:2,moveout:3,time:4,consult:5,cancel:6};
+  const order={add:0,readd:1,movein:2,moveout:3,time:4,consult:5,cancel:6,dup:7};
   const secs=r.counts.map(c=>{
     const L=r.log.filter(l=>l.dk===c.dk);
     const n=k=>L.filter(l=>l.kind===k).length;
-    const tiles=[['追加',n('add')+n('readd')],['移動で減った',n('moveout')],['時間変更',n('time')],['個別相談の変更',n('consult')],['キャンセル',n('cancel')],['変更なし',r.unchanged[c.dk]||0]]
+    const tiles=[['追加',n('add')+n('readd')],['移動で減った',n('moveout')],['時間変更',n('time')],['個別相談の変更',n('consult')],['キャンセル',n('cancel')],['重複を除いた',n('dup')],['変更なし',r.unchanged[c.dk]||0]]
       .map(([l,v])=>`<div class="tile"><b>${v}</b><span>${l}</span></div>`).join('');
     const rows=L.slice().sort((a,b)=>order[a.kind]-order[b.kind]).map(l=>`<tr><td><span class="chip ${l.kind}">${KIND[l.kind]}</span></td><td>${l.lv==='中'?'中':'高'}</td><td>${esc(l.name)}</td><td>${esc(l.detail)}</td></tr>`).join('');
     return `<div class="panel"><h2 style="font-size:17px;color:var(--fg);margin:0">${dLabel(c.dk)}の更新結果</h2>
