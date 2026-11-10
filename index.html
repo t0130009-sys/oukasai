@@ -45,7 +45,7 @@ h2{font-size:14px;letter-spacing:.08em;margin:0 0 10px;color:var(--muted);font-w
 .drop span{color:var(--muted);font-size:13px}
 .drop:focus-visible,button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--info);outline-offset:2px}
 .opts{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;font-size:14px}
-select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:6px 10px}
+select,input[type=date]{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:6px 10px}
 .msgs{display:flex;flex-direction:column;gap:8px}
 .msg{border-radius:5px;padding:9px 12px;font-size:13.5px;background:var(--warn-soft);color:var(--fg);border-left:4px solid var(--warn)}
 .msg.err{background:var(--bad-soft);border-left-color:var(--bad)}
@@ -101,6 +101,7 @@ button.primary:disabled{opacity:.5;cursor:default}
     <label><input type="checkbox" id="o-kana"> 午前→午後、フリガナ順</label>
     <span class="note">両方チェックすると、1日目・2日目は今の並びのまま、フリガナ順は別シート(1日目_フリガナ順など)で追加します。</span>
   </fieldset>
+  <div class="opts"><label for="o-date">集計日</label><input type="date" id="o-date"><span class="note">個別相談の集計の上(各日のシートの1行目)に「11/7現在」のように表示します。空にすると表示しません。</span></div>
 
   <div class="msgs" id="msgs" aria-live="polite"></div>
   <div id="result"></div>
@@ -374,6 +375,7 @@ async function reconcile(bookBuf,appFiles,opts){
   for(const dk of dates){
     const st=S[dk];
     writeSheet(st.main.doc,st.entries,4,true);
+    if(opts.dateText)stampDate(st.main.doc,opts.dateText);
     if(st.cancelSheet){
       writeSheet(st.cancelDoc.doc,st.cancel,3,false);
       const d1=[...st.cancelDoc.doc.getElementsByTagNameNS(NS,'c')].find(c=>c.getAttribute('r')==='D1');
@@ -569,6 +571,27 @@ function decorateKana(doc,list,styler){
       for(let ci=1;ci<=12;ci++){const c=cell(r,colName(ci));if(c)c.setAttribute('s',styler(+c.getAttribute('s')||0,side))}
   }
 }
+/* 個別相談の集計(P:Q列)の上、1行目に集計日(例: 11/7現在)を入れる */
+function stampDate(doc,text){
+  const sd=doc.getElementsByTagNameNS(NS,'sheetData')[0];
+  let row=[...sd.children].find(r=>r.getAttribute('r')==='1');
+  if(!row){row=doc.createElementNS(NS,'row');row.setAttribute('r','1');sd.insertBefore(row,sd.firstChild)}
+  row.removeAttribute('spans');
+  const r3=[...sd.children].find(r=>r.getAttribute('r')==='3');
+  const sOf=ref=>{const c=r3&&[...r3.children].find(c=>c.getAttribute('r')===ref);return c?c.getAttribute('s'):null};
+  const ensure=(col,st)=>{
+    let c=[...row.children].find(x=>x.getAttribute('r')===col+'1');
+    if(!c){c=doc.createElementNS(NS,'c');c.setAttribute('r',col+'1');
+      const nxt=[...row.children].find(x=>colNum(x.getAttribute('r').replace(/\d+/,''))>colNum(col));row.insertBefore(c,nxt||null)}
+    if(st)c.setAttribute('s',st);return c;
+  };
+  const p=ensure('P',sOf('P3')),q=ensure('Q',sOf('Q3'));
+  setStr(p,text);clearCell(q);
+  const mcs=doc.getElementsByTagNameNS(NS,'mergeCells')[0];
+  if(mcs&&![...mcs.children].some(m=>m.getAttribute('ref')==='P1:Q1')){
+    const m=doc.createElementNS(NS,'mergeCell');m.setAttribute('ref','P1:Q1');mcs.appendChild(m);mcs.setAttribute('count',mcs.children.length);
+  }
+}
 function clearCell(c){c.removeAttribute('t');while(c.firstChild)c.removeChild(c.firstChild)}
 function setNum(c,n){clearCell(c);const v=c.ownerDocument.createElementNS(NS,'v');v.textContent=String(n);c.appendChild(v)}
 function setStr(c,s){
@@ -607,7 +630,11 @@ async function addFiles(fileList){
   }
   renderSlots();setMsgs(msgs);await run(msgs);
 }
-const getOpts=()=>({keep:$('o-keep').checked,kana:$('o-kana').checked});
+const getOpts=()=>{
+  const v=($('o-date').value||'').split('-');
+  return{keep:$('o-keep').checked,kana:$('o-kana').checked,dateText:v.length===3?`${+v[1]}/${+v[2]}現在`:''};
+};
+(()=>{const t=new Date();$('o-date').value=`${t.getFullYear()}-${pad2(t.getMonth()+1)}-${pad2(t.getDate())}`})();
 async function run(baseMsgs){
   const my=++state.seq;
   if(!getOpts().keep&&!getOpts().kana){$('result').innerHTML='';setMsgs([{t:'並び順のチェックを1つ以上入れてください。',err:1}]);return}
@@ -660,7 +687,7 @@ pick.onchange=()=>{addFiles([...pick.files]);pick.value=''};
 for(const ev of['dragenter','dragover'])document.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over')});
 for(const ev of['dragleave','drop'])document.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over')});
 document.addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files.length)addFiles([...e.dataTransfer.files])});
-$('o-keep').onchange=$('o-kana').onchange=()=>run([]);
+$('o-keep').onchange=$('o-kana').onchange=$('o-date').onchange=()=>run([]);
 renderSlots();run([]);
 window.__bunkasai={addFiles,state};
 })();
